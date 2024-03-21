@@ -1,66 +1,95 @@
 mod strategies;
 
-use strategies::Payoff;
 use strategies::History;
 use strategies::Move;
+use strategies::Payoff;
+use strategies::Random;
 use strategies::Strategy;
 use strategies::TitForTat;
 
-use strategies::Random;
-
-
 fn main() {
-    let mut p1 = Player::new(Box::new(TitForTat{}));
-    let mut p2 = Player::new(Box::new(Random{}));
+    let p1 = Player::new(Box::new(Random {}));
+    let p2 = Player::new(Box::new(TitForTat {}));
 
-    let mut hist: History = Vec::new();
+    let mut game = PrisonerDilemmaGame::new(p1, p2, 1000000);
 
-    for _ in 0..1000 {
-        play_round(&mut p1, &mut p2, &mut hist);
-    }
+    game.play();
 
-    println!("p1: {}, p2: {}", p1.score, p2.score);
-
+    println!(
+        "Player 1 score ({}); {}",
+        game.p1.score,
+        game.p1.strategy.name()
+    );
+    println!(
+        "Player 2 score ({}); {}",
+        game.p2.score,
+        game.p2.strategy.name()
+    );
 }
 
-
-fn payoff(m1: Move, m2: Move) -> Payoff {
-    match (m1, m2) {
-        (Move::Cooperate, Move::Cooperate) => (2, 2),
-        (Move::Cooperate, Move::Defect) => (0, 3),
-        (Move::Defect, Move::Cooperate) => (3, 0),
-        (Move::Defect, Move::Defect) => (1, 1)
-    }
+struct PrisonerDilemmaGame {
+    iterations: i32,
+    history: History,
+    p1: Player,
+    p2: Player,
 }
 
-fn play_round(p1: &mut Player, p2: &mut Player, hist: &mut History) {
-    let m1 = p1.play(hist.clone());
-    let m2 = p2.play(hist.clone());
+impl PrisonerDilemmaGame {
+    fn new(p1: Player, p2: Player, iterations: i32) -> PrisonerDilemmaGame {
+        PrisonerDilemmaGame {
+            p1,
+            p2,
+            iterations,
+            history: Vec::new(),
+        }
+    }
 
-    let (p1_pay, p2_pay) = payoff(m1.clone(), m2.clone());
+    fn calculate_payoff(m1: &Move, m2: &Move) -> Payoff {
+        match (m1, m2) {
+            (Move::Cooperate, Move::Cooperate) => (2, 2),
+            (Move::Cooperate, Move::Defect) => (0, 3),
+            (Move::Defect, Move::Cooperate) => (3, 0),
+            (Move::Defect, Move::Defect) => (1, 1),
+        }
+    }
 
-    p1.pay(p1_pay);
-    p2.pay(p2_pay);
+    fn play(&mut self) {
+        for _ in 0..self.iterations {
+            self.play_round();
+        }
+    }
 
-    hist.push((m1, m2));
+    fn play_round(&mut self) {
+        let m1 = self.p1.play(&self.history, 0);
+        let m2 = self.p2.play(&self.history, 1);
+
+        let (p1_pay, p2_pay) = Self::calculate_payoff(&m1, &m2);
+
+        self.p1.pay(p1_pay);
+        self.p2.pay(p2_pay);
+
+        self.history.push([m1, m2]);
+    }
 }
 
 struct Player {
     score: i32,
-    strategy: Box<dyn Strategy>
+    strategy: Box<dyn Strategy>,
 }
 
 impl Player {
     fn new(strat: Box<dyn Strategy>) -> Player {
-        Player{score: 0, strategy: strat}
+        Player {
+            score: 0,
+            strategy: strat,
+        }
     }
 
-    fn play(&self, hist: History) -> Move {
-        self.strategy.play(hist)
+    fn play(&self, hist: &History, hist_inx: usize) -> Move {
+        self.strategy.play(hist, hist_inx)
     }
 
     fn pay(&mut self, p: i32) {
         self.score += p;
     }
 }
-
