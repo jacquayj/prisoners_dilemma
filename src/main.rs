@@ -1,29 +1,28 @@
+mod strategies;
+
+use strategies::Payoff;
+use strategies::History;
+use strategies::Move;
+use strategies::Strategy;
+use strategies::TitForTat;
+
+use strategies::Random;
+
 
 fn main() {
-    let mut p1 = TitForTat{score: 0};
-    let mut p2 = TitForTat{score: 0};
-    
-    let mut hist: History = vec![];
+    let mut p1 = Player::new(Box::new(TitForTat{}));
+    let mut p2 = Player::new(Box::new(Random{}));
 
+    let mut hist: History = Vec::new();
 
-    // Play 500 times
-    for _ in 0..500 {
+    for _ in 0..1000 {
         play_round(&mut p1, &mut p2, &mut hist);
     }
 
-    println!("Player 1 score: {}", p1.score());
-    println!("Player 2 score: {}", p2.score());
+    println!("p1: {}, p2: {}", p1.score, p2.score);
+
 }
 
-#[derive(Clone, Debug)]
-enum Move {
-    Cooperate,
-    Defect
-}
-
-type History = Vec<(Move, Move)>;
-
-type Payoff = (i32, i32);
 
 fn payoff(m1: Move, m2: Move) -> Payoff {
     match (m1, m2) {
@@ -34,78 +33,34 @@ fn payoff(m1: Move, m2: Move) -> Payoff {
     }
 }
 
-fn play_round(p1: &mut dyn Strategy, p2: &mut dyn Strategy, hist: &mut History) -> Payoff {
+fn play_round(p1: &mut Player, p2: &mut Player, hist: &mut History) {
     let m1 = p1.play(hist.clone());
     let m2 = p2.play(hist.clone());
-    let p = payoff(m1.clone(), m2.clone());
-    
-    p1.pay(p.0);
-    p2.pay(p.1);
+
+    let (p1_pay, p2_pay) = payoff(m1.clone(), m2.clone());
+
+    p1.pay(p1_pay);
+    p2.pay(p2_pay);
 
     hist.push((m1, m2));
-
-    p
 }
 
-trait Strategy {
-    fn play(&self, hist: History) -> Move;
-    fn score(&self) -> i32;
-    fn pay(&mut self, p: i32);
+struct Player {
+    score: i32,
+    strategy: Box<dyn Strategy>
 }
 
-struct AlwaysCooperate {
-    score: i32
-}
-
-impl Strategy for AlwaysCooperate {
-    fn play(&self, _hist: History) -> Move {
-        Move::Cooperate
+impl Player {
+    fn new(strat: Box<dyn Strategy>) -> Player {
+        Player{score: 0, strategy: strat}
     }
 
-    fn score(&self) -> i32 {
-        self.score
-    }
-
-    fn pay(&mut self, p: i32) {
-        self.score += p;
-    }
-}
-
-struct AlwaysDefect {
-    score: i32
-}
-
-impl Strategy for AlwaysDefect {
-    fn play(&self, _hist: History) -> Move {
-        Move::Defect
-    }
-
-    fn score(&self) -> i32 {
-        self.score
-    }
-
-    fn pay(&mut self, p: i32) {
-        self.score += p;
-    }
-}
-
-struct TitForTat {
-    score: i32
-}
-
-impl Strategy for TitForTat {
     fn play(&self, hist: History) -> Move {
-        match hist.last() {
-            Some((_, m)) => m.clone(),
-            None => Move::Cooperate
-        }
-    }
-
-    fn score(&self) -> i32 {
-        self.score
+        self.strategy.play(hist)
     }
 
     fn pay(&mut self, p: i32) {
         self.score += p;
     }
 }
+
