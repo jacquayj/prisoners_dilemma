@@ -1,35 +1,74 @@
+use num_cpus;
 use rand::Rng;
-
+use std::sync::mpsc::channel;
+use std::sync::Arc;
+use threadpool::ThreadPool;
 
 fn main() {
-    let p1 = Player::new(Random {});
-    let p2 = Player::new(TitForTat {});
 
-    let mut game = PrisonerDilemmaGame::new(p1, p2, 1000000);
+    // vector of strategies to play against each other
+    let strategies: Vec<Arc<dyn Strategy>> = vec![
+        // Arc is used to share ownership of the strategy objects between the various players and games
+        // and to ensure that the strategies are thread-safe
+        Arc::new(AlwaysCooperate {}),
+        Arc::new(AlwaysDefect {}),
+        Arc::new(TitForTat {}),
+        Arc::new(Random {}),
+        Arc::new(TwoTitsForTat {}),
+    ];
 
-    game.play();
+    let pool = ThreadPool::new(num_cpus::get());
 
-    println!(
-        "Player 1 score ({}); {}",
-        game.p1.score,
-        game.p1.strategy.name()
-    );
-    println!(
-        "Player 2 score ({}); {}",
-        game.p2.score,
-        game.p2.strategy.name()
-    );
+    let (tx, rx) = channel::<(Player, Player)>();
+
+    // play all strategies against each other
+    for s1 in strategies.iter() {
+        for s2 in strategies.iter() {
+            let tx = tx.clone();
+            let s1 = s1.clone();
+            let s2 = s2.clone();
+
+            pool.execute(move || {
+                let  p1 = Player::new(s1);
+                let  p2 = Player::new(s2);
+
+                let mut game = PrisonerDilemmaGame::new(p1, p2, 1000000);
+                
+                game.play();
+
+                tx.send((game.p1, game.p2)).unwrap();
+            });
+        }
+    }
+
+    let mut scores: Vec<(Player, Player)> = Vec::new();
+
+    for _ in 0..strategies.len() * strategies.len() {
+        let (p1, p2) = rx.recv().unwrap();
+        scores.push((p1, p2));
+    }
+
+    for (p1, p2) in scores {
+        println!(
+            "{} vs {}: {} vs {}",
+            p1.strategy.name(),
+            p2.strategy.name(),
+            p1.score,
+            p2.score
+        );
+    }
+   
 }
 
-struct PrisonerDilemmaGame<S1: Strategy, S2: Strategy> {
+struct PrisonerDilemmaGame {
     iterations: i32,
     history: History,
-    p1: Player<S1>,
-    p2: Player<S2>,
+    p1: Player,
+    p2: Player,
 }
 
-impl<S1: Strategy, S2: Strategy> PrisonerDilemmaGame<S1, S2> {
-    fn new(p1: Player<S1>, p2: Player<S2>, iterations: i32) -> PrisonerDilemmaGame<S1, S2>{
+impl PrisonerDilemmaGame {
+    fn new(p1: Player, p2: Player, iterations: i32) -> PrisonerDilemmaGame {
         PrisonerDilemmaGame {
             p1,
             p2,
@@ -66,13 +105,13 @@ impl<S1: Strategy, S2: Strategy> PrisonerDilemmaGame<S1, S2> {
     }
 }
 
-struct Player<S: Strategy> {
+struct Player {
     score: i32,
-    strategy: S,
+    strategy: Arc<dyn Strategy>,
 }
 
-impl<S: Strategy> Player<S> {
-    fn new(strat: S) -> Player<S> {
+impl Player {
+    fn new(strat: Arc<dyn Strategy>) -> Player {
         Player {
             score: 0,
             strategy: strat,
@@ -88,7 +127,6 @@ impl<S: Strategy> Player<S> {
     }
 }
 
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Move {
     Cooperate,
@@ -99,7 +137,7 @@ pub type History = Vec<[Move; 2]>;
 
 pub type Payoff = (i32, i32);
 
-pub trait Strategy {
+pub trait Strategy: Send + Sync {
     fn play(&self, hist: &History, hist_inx: usize) -> Move;
     fn name(&self) -> String;
 }
